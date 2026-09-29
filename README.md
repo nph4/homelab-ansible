@@ -37,9 +37,10 @@ If a host is on the tailnet, it needs `tailscale set --accept-routes=false`. nel
 | Group | Hosts | Purpose |
 |---|---|---|
 | `pis` | Pi-hole boxes | `pihole-update.yml` |
-| `ubuntu` | nelson-nuc, quark-vm, kirks-bar | `updates.yml` |
+| `ubuntu` | nelson-nuc, quark-vm, kirks-bar | `updates.yml` (also reboots on an NVIDIA driver mismatch) |
 | `komodo_periphery` | docker hosts running a standalone Periphery (kirks-bar) | `komodo-periphery.yml` |
-| `docker` | children: `komodo_periphery` | `docker.yml` |
+| `docker` | children: `komodo_periphery`, `nvidia` | `docker.yml` |
+| `nvidia` | docker hosts with an NVIDIA GPU (kirks-bar) | `nvidia.yml` |
 
 `quark-vm.lan` is a CNAME for `quarks.lan`, so it's listed only once.
 
@@ -53,6 +54,7 @@ If a host is on the tailnet, it needs `tailscale set --accept-routes=false`. nel
 | `timezone.yml` | all hosts | Sets the timezone and configures timesyncd. |
 | `docker.yml` | `docker` | Installs Docker + compose v2 and adds `docker_user` to the docker group. |
 | `komodo-periphery.yml` | `komodo_periphery` | Deploys a standalone Komodo Periphery agent. |
+| `nvidia.yml` | `nvidia` | Installs the NVIDIA driver + container toolkit so containers can use the GPU. |
 
 ### docker.yml
 
@@ -69,6 +71,12 @@ Runs Periphery as `docker_user` (compose project in that user's `~/containers/ko
 - Never target nelson-nuc — its Periphery is part of the Core compose project.
 
 Background lives in the Homelab-IaC repo's `Komodo-PoC.md` / `Komodo-Migration.md`.
+
+### nvidia.yml
+
+Installs the headless NVIDIA driver (`nvidia_driver_branch`, default `580-server`, the last branch that supports Pascal cards like kirks-bar's Quadro P1000) with Canonical's prebuilt kernel modules instead of DKMS. It also blacklists nouveau, installs `nvidia-container-toolkit` from NVIDIA's apt repo, and registers the `nvidia` runtime with Docker. The first run reboots the host to load the driver, then checks `nvidia-smi` on the host and in a container. Imports `docker.yml` first.
+
+Kernel and NVIDIA packages are excluded from unattended-upgrades (`/etc/apt/apt.conf.d/51unattended-upgrades-nvidia`), so they only move when `updates.yml` runs. A driver upgrade breaks NVML until reboot (`Driver/library version mismatch`), and a new kernel installed without its nvidia module boots with no driver. `updates.yml` reboots on a driver mismatch as well as on `reboot-required`. The driver isn't `apt-mark hold`: each kernel's module package requires the matching driver version, so a hold would block kernel updates.
 
 ## Layout
 

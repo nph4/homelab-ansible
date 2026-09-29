@@ -1,0 +1,116 @@
+# Install the NVIDIA driver and container toolkit on docker hosts with an NVIDIA GPU, so containers
+# can use it (Jellyfin's NVENC transcoding on kirks-bar).
+#
+# Uses Canonical's prebuilt signed kernel modules (linux-modules-nvidia-*) rather than DKMS, so kernel
+# updates don't rebuild anything. nvidia_driver_branch must still support the GPU: 580 is the last
+# branch with Pascal (Quadro P1000).
+#
+# Kernel and driver packages are kept out of unattended-upgrades. New driver libraries with the old
+# module still loaded break NVML ("Driver/library version mismatch") until a reboot, and a new kernel
+# installed without its matching nvidia module boots with no driver. updates.yml upgrades both together
+# and reboots. Not apt-mark hold: each kernel's module package requires the matching driver version,
+# so holding the driver would block kernel updates.
+
+# nvidia-ctk configures Docker, so it has to be installed first
+- import_playbook: docker.yml
+
+- name: Install NVIDIA driver and container toolkit
+  hosts: nvidia
+  become: true
+  vars:
+    nvidia_driver_branch: "580-server"
+    # Pinned image for the in-container nvidia-smi check
+    nvidia_test_image: "ubuntu:24.04"
+
+  tasks:
+    - name: Install headless NVIDIA driver with prebuilt kernel modules
+      apt:
+        name:
+          - "nvidia-headless-no-dkms-{{ nvidia_driver_branch }}"
+          - "nvidia-utils-{{ nvidia_driver_branch }}"
+          - "libnvidia-decode-{{ nvidia_driver_branch }}"
+          - "libnvidia-encode-{{ nvidia_driver_branch }}"
+          - "linux-modules-nvidia-{{ nvidia_driver_branch }}-generic"
+        update_cache: true
+
+    - name: Blacklist nouveau
+      copy:
+        dest: /etc/modprobe.d/blacklist-nouveau.conf
+        content: |
+          blacklist nouveau
+          options nouveau modeset=0
+        mode: "0644"
+      register: nouveau_blacklist
+
+    - name: Rebuild initramfs without nouveau
+      command: update-initramfs -u
+      when: nouveau_blacklist is changed
+
+    - name: Keep kernel and NVIDIA packages out of unattended-upgrades
+      copy:
+        dest: /etc/apt/apt.conf.d/51unattended-upgrades-nvidia
+        content: |
+          // Managed by homelab-ansible playbooks/nvidia.yml. Upgraded together by updates.yml, which reboots.
+          Unattended-Upgrade::Package-Blacklist {
+              "linux-";
+              "nvidia-";
+              "libnvidia-";
+          };
+        mode: "0644"
+
+    - name: Add NVIDIA container toolkit apt repo
+      deb822_repository:
+        name: nvidia-container-toolkit
+        types: deb
+        uris: "https://nvidia.github.io/libnvidia-container/stable/deb/{{ 'amd64' if ansible_facts.architecture == 'x86_64' else 'arm64' }}"
+        suites: "/"
+        signed_by: "https://nvidia.github.io/libnvidia-container/gpgkey"
+
+    - name: Install NVIDIA container toolkit
+      apt:
+        name: nvidia-container-toolkit
+        update_cache: true
+
+    - name: Check Docker daemon config
+      stat:
+        path: /etc/docker/daemon.json
+      register: daemon_json_before
+
+    - name: Register the nvidia runtime with Docker
+      command: nvidia-ctk runtime configure --runtime=docker
+      changed_when: false
+
+    - name: Check Docker daemon config again
+      stat:
+        path: /etc/docker/daemon.json
+      register: daemon_json_after
+
+    - name: Restart Docker to load the nvidia runtime
+      systemd:
+        name: docker
+        state: restarted
+      when: daemon_json_before.stat.checksum | default('') != daemon_json_after.stat.checksum | default('')
+
+    - name: Check the driver is loaded
+      command: nvidia-smi
+      register: nvidia_smi
+      changed_when: false
+      failed_when: false
+
+    # First install: nouveau still holds the GPU until a reboot
+    - name: Reboot to load the NVIDIA driver
+      reboot:
+        msg: "Reboot initiated by Ansible to load the NVIDIA driver"
+        connect_timeout: 5
+        reboot_timeout: 300
+        post_reboot_delay: 30
+        test_command: uptime
+      when: nvidia_smi.rc != 0
+
+    - name: Check nvidia-smi on the host
+      command: nvidia-smi
+      changed_when: false
+
+    - name: Check nvidia-smi inside a container
+      command: docker run --rm --gpus all {{ nvidia_test_image }} nvidia-smi
+      changed_when: false

@@ -16,6 +16,10 @@ kirks-bar.lan docker_user='kirk'
 # Hosts that get Docker Engine + compose v2 from playbooks/docker.yml
 [docker:children]
 komodo_periphery
+nvidia
 [docker:vars]
 # Account added to the docker group, and that Periphery runs as; set per host once it exists
 docker_user='CHANGEME'
+# Docker hosts with an NVIDIA GPU (playbooks/nvidia.yml)
+[nvidia]
+kirks-bar.lan

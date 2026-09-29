@@ -11,6 +11,14 @@
       register: reboot_required_file
       stat: path=/var/run/reboot-required get_checksum=no
 
+    # A driver upgrade doesn't set reboot-required, but NVML fails until the new module is loaded
+    - name: Check the NVIDIA driver matches the loaded module
+      command: nvidia-smi
+      register: nvidia_smi
+      changed_when: false
+      failed_when: false
+      when: "'nvidia' in group_names"
+
     - name: Reboot the box if kernel updated
       reboot:
         msg: "Reboot initiated by Ansible for kernel updates"
@@ -19,4 +27,4 @@
         pre_reboot_delay: 0
         post_reboot_delay: 30
         test_command: uptime
-      when: reboot_required_file.stat.exists
+      when: reboot_required_file.stat.exists or 'mismatch' in ((nvidia_smi.stdout | default('')) ~ (nvidia_smi.stderr | default('')))
