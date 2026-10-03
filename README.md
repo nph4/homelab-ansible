@@ -28,7 +28,7 @@ ansible-playbook playbooks/bootstrap.yml -l <host> -e ansible_user=<existing use
 
 On Ubuntu 26.04+ (e.g. kirks-bar), `sudo` is sudo-rs, and the bootstrap fails with `Timeout (12s) waiting for privilege escalation prompt` because Ansible doesn't see its password prompt. Add `-e ansible_become_exe=sudo.ws` to use the original sudo, which Ubuntu still ships. Only the bootstrap needs this: afterwards the `ansible` user's sudo is passwordless, so there's no prompt.
 
-If a host is on the tailnet, it needs `tailscale set --accept-routes=false`. nelson-nuc advertises the LAN as a subnet route, and a LAN host that accepts it replies to LAN connections through Tailscale, so the control container's SSH times out (kirks-bar hit this).
+If a server on the LAN is on the tailnet, it needs `tailscale set --accept-routes=false`. (Roaming clients like the laptop are the exception: they keep it on, see the Homelab-IaC README.) nelson-nuc advertises the LAN as a subnet route, and a LAN host that accepts it replies to LAN connections through Tailscale, so the control container's SSH times out (kirks-bar hit this).
 
 ## Inventory
 
