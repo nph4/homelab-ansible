@@ -18,8 +18,8 @@
   vars:
     # Must match the Core version on nelson-nuc
     komodo_version: "2.3.3"
-    # Core's Tailscale-bound address, so the host needs to be on the tailnet
-    komodo_core_address: "100.69.15.50:9120"
+    # Core's LAN-bound address (nelson-nuc). Off-LAN hosts can reach it over the tailnet via nelson-nuc's subnet route
+    komodo_core_address: "192.168.88.101:9120"
     komodo_server_name: "{{ inventory_hostname_short }}"
     komodo_timezone: America/Los_Angeles
     komodo_containers_dir: "{{ ansible_facts.user_dir }}/containers"
