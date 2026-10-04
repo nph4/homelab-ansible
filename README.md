@@ -41,6 +41,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `komodo_periphery` | docker hosts running a standalone Periphery (kirks-bar) | `komodo-periphery.yml` |
 | `docker` | children: `komodo_periphery`, `nvidia` | `docker.yml` |
 | `nvidia` | docker hosts with an NVIDIA GPU (kirks-bar) | `nvidia.yml` |
+| `nas_remount_restart` | hosts with containers binding `/mnt/nas` subdirectories (kirks-bar) | `nas-remount-restart.yml` |
 
 `quark-vm.lan` is a CNAME for `quarks.lan`, so it's listed only once.
 
@@ -55,6 +56,11 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `docker.yml` | `docker` | Installs Docker + compose v2 and adds `docker_user` to the docker group. |
 | `komodo-periphery.yml` | `komodo_periphery` | Deploys a standalone Komodo Periphery agent. |
 | `nvidia.yml` | `nvidia` | Installs the NVIDIA driver + container toolkit so containers can use the GPU. |
+| `nas-remount-restart.yml` | `nas_remount_restart` | Restarts the host's `nas_restart_containers` whenever `/mnt/nas` mounts. |
+
+### nas-remount-restart.yml
+
+A container that binds a subdirectory of the NAS share (e.g. `/mnt/nas/media/Books`) keeps whatever was there when it started: the empty mount point if the share wasn't mounted yet, or the old mount after a remount. `rslave` doesn't help, since the remount happens at `/mnt/nas`, above the bind. The playbook installs `nas-remount-restart.service`, `WantedBy=mnt-nas.mount`, which runs `docker restart` on the host's `nas_restart_containers` (container names, set per host in the inventory) each time the share mounts. Installing it restarts nothing.
 
 ### docker.yml
 

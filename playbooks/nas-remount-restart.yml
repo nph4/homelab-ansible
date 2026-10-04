@@ -1,0 +1,31 @@
+# Restart containers that bind subdirectories of the NAS share whenever /mnt/nas (re)mounts.
+#
+# A bind of a subdirectory (e.g. /mnt/nas/media/Books) captures whatever was at that path when the
+# container started: the empty mount point if the NAS wasn't mounted yet, or the old CIFS mount if it
+# later remounts. rslave propagation doesn't help, because the remount happens at /mnt/nas, above the
+# bind's root. Restarting the container makes it bind the live mount.
+#
+# Hooks mnt-nas.mount itself (WantedBy=), so it fires on every mount, whether from the automount or
+# a manual `mount /mnt/nas`. Installing it restarts nothing; it only runs on the next mount.
+
+- name: Restart NAS-backed containers after /mnt/nas mounts
+  hosts: nas_remount_restart
+  become: true
+
+  tasks:
+    - name: Refuse an empty container list
+      assert:
+        that: nas_restart_containers | default([]) | length > 0
+        fail_msg: "Set nas_restart_containers for {{ inventory_hostname }} in the inventory"
+
+    - name: Install the restart unit
+      template:
+        src: ../templates/nas-remount-restart.service.j2
+        dest: /etc/systemd/system/nas-remount-restart.service
+        mode: "0644"
+
+    - name: Enable it on mnt-nas.mount (does not start it)
+      systemd:
+        name: nas-remount-restart.service
+        enabled: true
+        daemon_reload: true

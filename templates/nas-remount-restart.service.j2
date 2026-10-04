@@ -1,0 +1,13 @@
+# Managed by homelab-ansible (playbooks/nas-remount-restart.yml)
+[Unit]
+Description=Restart containers that bind /mnt/nas subdirectories after the share (re)mounts
+After=mnt-nas.mount docker.service
+
+[Service]
+Type=oneshot
+# A subdirectory bind (e.g. /mnt/nas/media/Books) keeps pointing at the old or empty
+# mount when the share remounts; rslave cannot fix that, a container restart does.
+ExecStart=-/usr/bin/docker restart {{ nas_restart_containers | join(' ') }}
+
+[Install]
+WantedBy=mnt-nas.mount

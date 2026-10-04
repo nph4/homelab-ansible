@@ -23,3 +23,7 @@ docker_user='CHANGEME'
 # Docker hosts with an NVIDIA GPU (playbooks/nvidia.yml)
 [nvidia]
 kirks-bar.lan
+# Hosts whose containers bind /mnt/nas subdirectories and need a restart when it remounts
+# (playbooks/nas-remount-restart.yml). Values are container names, not compose services.
+[nas_remount_restart]
+kirks-bar.lan nas_restart_containers='["Jellyfin"]'
