@@ -27,4 +27,6 @@ kirks-bar.lan
 # (playbooks/nas-remount-restart.yml). Values are container names, not compose services.
 [nas_remount_restart]
 nelson-nuc.lan nas_restart_containers='["calibre-web"]'
+# crashplan binds /mnt/nas itself with rslave, which covers a late first mount but not a remount
+quark-vm.lan nas_restart_containers='["crashplan-pro"]'
 kirks-bar.lan nas_restart_containers='["Jellyfin"]'

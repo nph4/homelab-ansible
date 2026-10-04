@@ -41,7 +41,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `komodo_periphery` | docker hosts running a standalone Periphery (kirks-bar) | `komodo-periphery.yml` |
 | `docker` | children: `komodo_periphery`, `nvidia` | `docker.yml` |
 | `nvidia` | docker hosts with an NVIDIA GPU (kirks-bar) | `nvidia.yml` |
-| `nas_remount_restart` | hosts with containers binding `/mnt/nas` subdirectories (nelson-nuc, kirks-bar) | `nas-remount-restart.yml` |
+| `nas_remount_restart` | hosts with containers binding `/mnt/nas` subdirectories (nelson-nuc, quark-vm, kirks-bar) | `nas-remount-restart.yml` |
 
 `quark-vm.lan` is a CNAME for `quarks.lan`, so it's listed only once.
 
