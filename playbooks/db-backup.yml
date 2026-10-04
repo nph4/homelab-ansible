@@ -1,0 +1,55 @@
+# Nightly database dumps of labeled containers to the NAS.
+#
+# Installs /usr/local/sbin/db-backup and a root cron entry. The script finds running containers by
+# label (homelab.backup.postgres / homelab.backup.sqlite, set in Homelab-IaC's compose files), writes
+# gzipped dumps to {{ db_backup_dest }}/<host>/<date>/ and keeps the newest {{ db_backup_keep }} days.
+# The default 02:30 run lands before CrashPlan's 03:00 scan of the share, so the dumps go offsite the
+# same night. Installing it runs nothing; run `sudo db-backup` on a host to test.
+
+- name: Nightly database backups to the NAS
+  hosts: db_backup
+  become: true
+
+  vars:
+    db_backup_dest: /mnt/nas/backups/db
+    db_backup_keep: 14
+    db_backup_minute: "30"
+    db_backup_hour: "2"
+    # Optional Uptime Kuma push monitor URL (without query string); empty disables it
+    db_backup_push_url: ""
+
+  tasks:
+    - name: Install sqlite3 and jq
+      apt:
+        name: [sqlite3, jq]
+        state: present
+
+    - name: Install the backup script
+      copy:
+        src: ../files/db-backup.sh
+        dest: /usr/local/sbin/db-backup
+        mode: "0755"
+
+    - name: Schedule it
+      copy:
+        dest: /etc/cron.d/db-backup
+        mode: "0644"
+        content: |
+          # Managed by homelab-ansible (playbooks/db-backup.yml)
+          DB_BACKUP_DEST={{ db_backup_dest }}
+          DB_BACKUP_KEEP={{ db_backup_keep }}
+          DB_BACKUP_PUSH_URL={{ db_backup_push_url }}
+          {{ db_backup_minute }} {{ db_backup_hour }} * * * root /usr/local/sbin/db-backup >>/var/log/db-backup.log 2>&1
+
+    - name: Rotate its log
+      copy:
+        dest: /etc/logrotate.d/db-backup
+        mode: "0644"
+        content: |
+          /var/log/db-backup.log {
+              monthly
+              rotate 6
+              compress
+              missingok
+              notifempty
+          }

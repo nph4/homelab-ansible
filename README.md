@@ -42,6 +42,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `docker` | children: `komodo_periphery`, `nvidia` | `docker.yml` |
 | `nvidia` | docker hosts with an NVIDIA GPU (kirks-bar) | `nvidia.yml` |
 | `nas_remount_restart` | hosts with containers binding `/mnt/nas` subdirectories (nelson-nuc, quark-vm, kirks-bar) | `nas-remount-restart.yml` |
+| `db_backup` | docker hosts with database containers to back up (nelson-nuc, quark-vm, kirks-bar) | `db-backup.yml` |
 
 `quark-vm.lan` is a CNAME for `quarks.lan`, so it's listed only once.
 
@@ -57,10 +58,22 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `komodo-periphery.yml` | `komodo_periphery` | Deploys a standalone Komodo Periphery agent. |
 | `nvidia.yml` | `nvidia` | Installs the NVIDIA driver + container toolkit so containers can use the GPU. |
 | `nas-remount-restart.yml` | `nas_remount_restart` | Restarts the host's `nas_restart_containers` whenever `/mnt/nas` mounts. |
+| `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers to the NAS. |
 
 ### nas-remount-restart.yml
 
 A container that binds a subdirectory of the NAS share (e.g. `/mnt/nas/media/Books`) keeps whatever was there when it started: the empty mount point if the share wasn't mounted yet, or the old mount after a remount. `rslave` doesn't help, since the remount happens at `/mnt/nas`, above the bind. The playbook installs `nas-remount-restart.service`, `WantedBy=mnt-nas.mount`, which runs `docker restart` on the host's `nas_restart_containers` (container names, set per host in the inventory) each time the share mounts. Installing it restarts nothing.
+
+### db-backup.yml
+
+Installs `/usr/local/sbin/db-backup` and `/etc/cron.d/db-backup` (02:30 daily, before CrashPlan's 03:00 scan of the share). The script backs up running containers by label, set in the Homelab-IaC compose files:
+
+- `homelab.backup.postgres=true`: `pg_dumpall` as the container's `$POSTGRES_USER`, checked for the end-of-dump marker.
+- `homelab.backup.sqlite=/path/a.db,/path/b.db`: SQLite's online `.backup` of each path (paths inside the container, which must be on a bind mount or volume), checked with `PRAGMA quick_check`. It runs as the file's owner, so any `-wal`/`-shm` files it creates aren't root-owned.
+
+Dumps are gzipped into `/mnt/nas/backups/db/<host>/<YYYY-MM-DD>/`, keeping the newest 14 days (`db_backup_keep`). If `/mnt/nas` isn't mounted, the script exits without writing anything. The log is `/var/log/db-backup.log`, and the exit status is non-zero if any dump failed. Set `db_backup_push_url` to an Uptime Kuma push monitor URL to be alerted on failures or missed runs. Run `sudo db-backup` on a host to test.
+
+Restore: `zcat <c>.sql.gz | docker exec -i <c> psql -U <user> -d postgres` into a fresh (empty-volume) container; for SQLite, stop the app and replace the file with the gunzipped copy, removing any `-wal`/`-shm` next to it.
 
 ### docker.yml
 

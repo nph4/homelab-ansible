@@ -30,3 +30,8 @@ nelson-nuc.lan nas_restart_containers='["calibre-web"]'
 # crashplan binds /mnt/nas itself with rslave, which covers a late first mount but not a remount
 quark-vm.lan nas_restart_containers='["crashplan-pro"]'
 kirks-bar.lan nas_restart_containers='["Jellyfin"]'
+# Hosts whose labeled database containers are dumped to the NAS nightly (playbooks/db-backup.yml)
+[db_backup]
+nelson-nuc.lan
+quark-vm.lan
+kirks-bar.lan
