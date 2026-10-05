@@ -1,4 +1,4 @@
-- hosts: ubuntu
+- hosts: ubuntu:pis
   become: true
   tasks:
     - name: Update apt repo and cache on all Debian/Ubuntu boxes

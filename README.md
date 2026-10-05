@@ -36,7 +36,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 
 | Group | Hosts | Purpose |
 |---|---|---|
-| `pis` | Pi-hole boxes | `pihole-update.yml` |
+| `pis` | Pi-hole boxes | `pihole-update.yml`, `pihole-backup.yml`, `updates.yml` |
 | `ubuntu` | nelson-nuc, quark-vm, kirks-bar | `updates.yml` (also reboots on an NVIDIA driver mismatch) |
 | `komodo_periphery` | docker hosts running a standalone Periphery (kirks-bar) | `komodo-periphery.yml` |
 | `docker` | children: `komodo_periphery`, `nvidia` | `docker.yml` |
@@ -51,7 +51,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | Playbook | Targets | What it does |
 |---|---|---|
 | `bootstrap.yml` | `-l <host>` | One-time creation of the `ansible` user (see Authentication). |
-| `updates.yml` | `ubuntu` | apt dist-upgrade, reboot if required. |
+| `updates.yml` | `ubuntu`, `pis` | apt dist-upgrade, reboot if required. |
 | `pihole-update.yml` | `pis` | Updates Pi-hole. |
 | `timezone.yml` | all hosts | Sets the timezone and configures timesyncd. |
 | `docker.yml` | `docker` | Installs Docker + compose v2 and adds `docker_user` to the docker group. |
