@@ -1,0 +1,56 @@
+# Nightly Pi-hole Teleporter export to the NAS.
+#
+# Installs /usr/local/sbin/pihole-backup and a root cron entry. The script writes a Teleporter zip
+# (pihole.toml, gravity.db, /etc/hosts) to {{ pihole_backup_dest }} and keeps the newest
+# {{ pihole_backup_keep }}. The default 00:45 run is before 01:00 (01:00-03:00 is avoided: DST
+# changeovers skip or repeat those times) and before CrashPlan's 03:00 scan of the share, so the export
+# goes offsite the same night. Needs /mnt/nas mounted on the host. Installing it runs nothing; run
+# `sudo pihole-backup` to test.
+
+- name: Nightly Pi-hole backups to the NAS
+  hosts: pis
+  become: true
+
+  vars:
+    pihole_backup_dest: /mnt/nas/backups/pihole
+    pihole_backup_keep: 30
+    pihole_backup_minute: "45"
+    pihole_backup_hour: "0"
+    # Optional Uptime Kuma push monitor URL (without query string); empty disables it
+    pihole_backup_push_url: ""
+
+  tasks:
+    - name: Install unzip
+      apt:
+        name: unzip
+        state: present
+
+    - name: Install the backup script
+      copy:
+        src: ../files/pihole-backup.sh
+        dest: /usr/local/sbin/pihole-backup
+        mode: "0755"
+
+    - name: Schedule it
+      copy:
+        dest: /etc/cron.d/pihole-backup
+        mode: "0644"
+        content: |
+          # Managed by homelab-ansible (playbooks/pihole-backup.yml)
+          PIHOLE_BACKUP_DEST={{ pihole_backup_dest }}
+          PIHOLE_BACKUP_KEEP={{ pihole_backup_keep }}
+          PIHOLE_BACKUP_PUSH_URL={{ pihole_backup_push_url }}
+          {{ pihole_backup_minute }} {{ pihole_backup_hour }} * * * root /usr/local/sbin/pihole-backup >>/var/log/pihole-backup.log 2>&1
+
+    - name: Rotate its log
+      copy:
+        dest: /etc/logrotate.d/pihole-backup
+        mode: "0644"
+        content: |
+          /var/log/pihole-backup.log {
+              monthly
+              rotate 6
+              compress
+              missingok
+              notifempty
+          }

@@ -59,6 +59,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `nvidia.yml` | `nvidia` | Installs the NVIDIA driver + container toolkit so containers can use the GPU. |
 | `nas-remount-restart.yml` | `nas_remount_restart` | Restarts the host's `nas_restart_containers` whenever `/mnt/nas` mounts. |
 | `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers (and labeled upload directories) to the NAS. |
+| `pihole-backup.yml` | `pis` | Nightly Pi-hole Teleporter export to the NAS. |
 
 ### nas-remount-restart.yml
 
@@ -76,6 +77,12 @@ Installs `/usr/local/sbin/db-backup` and `/etc/cron.d/db-backup` (00:30 daily: b
 Dumps are gzipped into `/mnt/nas/backups/db/<host>/<YYYY-MM-DD>/`, keeping the newest 14 days (`db_backup_keep`). If `/mnt/nas` isn't mounted, the script exits without writing anything. The log is `/var/log/db-backup.log`, and the exit status is non-zero if any dump failed. Set `db_backup_push_url` to an Uptime Kuma push monitor URL to be alerted on failures or missed runs. Run `sudo db-backup` on a host to test.
 
 Restore: `zcat <c>.sql.gz | docker exec -i <c> psql -U <user> -d postgres` into a fresh (empty-volume) container. For MariaDB, `zcat <c>.sql.gz | docker exec -i <c> sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'`. For SQLite, stop the app and replace the file with the gunzipped copy, removing any `-wal`/`-shm` next to it. For files, stop the app and `tar -xzf` the archive into the directory's parent.
+
+### pihole-backup.yml
+
+Installs `/usr/local/sbin/pihole-backup` and `/etc/cron.d/pihole-backup` (00:45 daily, for the same reasons as `db-backup`). The script runs `pihole-FTL --teleporter` in a temp directory, checks the zip (integrity, and that it contains `pihole.toml`), and copies it to `/mnt/nas/backups/pihole/` (`pihole_backup_dest`), keeping the newest 30 (`pihole_backup_keep`). A Teleporter export holds `pihole.toml` (all settings, local DNS and CNAME records), `gravity.db` (adlists, allow/deny lists, groups, clients) and `/etc/hosts`; it doesn't include the query history. Needs `/mnt/nas` mounted on the Pi; if it isn't, the script exits without writing anything. Log, exit status and `pihole_backup_push_url` work like `db-backup`. Run `sudo pihole-backup` to test.
+
+Restore: Pi-hole web UI > Settings > Teleporter > Import, or `sudo pihole-FTL --teleporter <zip>` on the Pi.
 
 ### docker.yml
 
