@@ -3,7 +3,8 @@
 # Installs /usr/local/sbin/db-backup and a root cron entry. The script finds running containers by
 # label (homelab.backup.postgres / homelab.backup.sqlite, set in Homelab-IaC's compose files), writes
 # gzipped dumps to {{ db_backup_dest }}/<host>/<date>/ and keeps the newest {{ db_backup_keep }} days.
-# The default 02:30 run lands before CrashPlan's 03:00 scan of the share, so the dumps go offsite the
+# The default 00:30 run finishes well before 01:00 (01:00-03:00 is avoided: DST changeovers skip or
+# repeat those times) and lands before CrashPlan's 03:00 scan of the share, so the dumps go offsite the
 # same night. Installing it runs nothing; run `sudo db-backup` on a host to test.
 
 - name: Nightly database backups to the NAS
@@ -14,7 +15,7 @@
     db_backup_dest: /mnt/nas/backups/db
     db_backup_keep: 14
     db_backup_minute: "30"
-    db_backup_hour: "2"
+    db_backup_hour: "0"
     # Optional Uptime Kuma push monitor URL (without query string); empty disables it
     db_backup_push_url: ""
 

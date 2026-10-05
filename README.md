@@ -66,7 +66,7 @@ A container that binds a subdirectory of the NAS share (e.g. `/mnt/nas/media/Boo
 
 ### db-backup.yml
 
-Installs `/usr/local/sbin/db-backup` and `/etc/cron.d/db-backup` (02:30 daily, before CrashPlan's 03:00 scan of the share). The script backs up running containers by label, set in the Homelab-IaC compose files:
+Installs `/usr/local/sbin/db-backup` and `/etc/cron.d/db-backup` (00:30 daily: before 01:00, since DST changeovers skip or repeat 01:00–03:00, and before CrashPlan's 03:00 scan of the share). The script backs up running containers by label, set in the Homelab-IaC compose files:
 
 - `homelab.backup.postgres=true`: `pg_dumpall` as the container's `$POSTGRES_USER`, checked for the end-of-dump marker.
 - `homelab.backup.sqlite=/path/a.db,/path/b.db`: SQLite's online `.backup` of each path (paths inside the container, which must be on a bind mount or volume), checked with `PRAGMA quick_check`. It runs as the file's owner, so any `-wal`/`-shm` files it creates aren't root-owned.
