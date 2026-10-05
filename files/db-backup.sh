@@ -40,6 +40,7 @@ work=$(mktemp -d /var/tmp/db-backup.XXXXXX)
 trap 'rm -rf "$work"' EXIT
 # sqlite3 runs as each database's owner (see below), so it needs to create files here
 chmod 0733 "$work"
+mkdir "$work/mnt"
 mkdir -p "$dest"
 
 log "start -> $dest"
@@ -73,10 +74,14 @@ for c in $(docker ps --filter label=homelab.backup.sqlite --format '{{.Names}}')
         fi
         tmp="$work/$c.$(basename "$p")"
         # Run as the file's owner: if sqlite3 has to create the -wal/-shm files, root-owned
-        # ones would lock the app out of its own database. Supplementary group root is only there
-        # to get through /var/lib/docker (0710 root:root) to volume-backed databases.
-        as_owner=(setpriv --reuid="$(stat -c %u "$src")" --regid="$(stat -c %g "$src")" --groups=0)
-        if "${as_owner[@]}" sqlite3 "$src" ".backup '$tmp'" &&
+        # ones would lock the app out of its own database. The owner can't traverse
+        # /var/lib/docker to reach a volume, so the database's directory is bind-mounted at
+        # $work/mnt in a private mount namespace and opened from there.
+        if unshare -m --propagation private sh -c '
+            mount --bind "$1" "$2" &&
+                exec setpriv --reuid="$3" --regid="$4" --clear-groups sqlite3 "$2/$5" ".backup $6"' \
+            _ "$(dirname "$src")" "$work/mnt" "$(stat -c %u "$src")" "$(stat -c %g "$src")" \
+            "$(basename "$src")" "$tmp" &&
             [[ $(sqlite3 "$tmp" 'PRAGMA quick_check') == ok ]] &&
             gzip "$tmp" && cp "$tmp.gz" "$dest/"; then
             log "ok   $c $p ($(du -h "$tmp.gz" | cut -f1))"
