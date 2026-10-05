@@ -36,7 +36,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 
 | Group | Hosts | Purpose |
 |---|---|---|
-| `pis` | Pi-hole boxes | `pihole-update.yml`, `pihole-backup.yml`, `updates.yml` |
+| `pis` | Pi-hole boxes | `pihole-update.yml`, `pihole-backup.yml`, `pihole-harden.yml`, `updates.yml` |
 | `ubuntu` | nelson-nuc, quark-vm, kirks-bar | `updates.yml` (also reboots on an NVIDIA driver mismatch) |
 | `komodo_periphery` | docker hosts running a standalone Periphery (kirks-bar) | `komodo-periphery.yml` |
 | `docker` | children: `komodo_periphery`, `nvidia` | `docker.yml` |
@@ -60,6 +60,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `nas-remount-restart.yml` | `nas_remount_restart` | Restarts the host's `nas_restart_containers` whenever `/mnt/nas` mounts. |
 | `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers (and labeled upload directories) to the NAS. |
 | `pihole-backup.yml` | `pis` | Nightly Pi-hole Teleporter export to the NAS. |
+| `pihole-harden.yml` | `pis` | SSH key-only login, disables unneeded desktop services, locks unused accounts. |
 
 ### nas-remount-restart.yml
 
@@ -77,6 +78,12 @@ Installs `/usr/local/sbin/db-backup` and `/etc/cron.d/db-backup` (00:30 daily: b
 Dumps are gzipped into `/mnt/nas/backups/db/<host>/<YYYY-MM-DD>/`, keeping the newest 14 days (`db_backup_keep`). If `/mnt/nas` isn't mounted, the script exits without writing anything. The log is `/var/log/db-backup.log`, and the exit status is non-zero if any dump failed. Set `db_backup_push_url` to an Uptime Kuma push monitor URL to be alerted on failures or missed runs. Run `sudo db-backup` on a host to test.
 
 Restore: `zcat <c>.sql.gz | docker exec -i <c> psql -U <user> -d postgres` into a fresh (empty-volume) container. For MariaDB, `zcat <c>.sql.gz | docker exec -i <c> sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'`. For SQLite, stop the app and replace the file with the gunzipped copy, removing any `-wal`/`-shm` next to it. For files, stop the app and `tar -xzf` the archive into the directory's parent.
+
+### pihole-harden.yml
+
+For the Pi-hole Pi, which runs a Raspberry Pi OS desktop image. It authorizes `pihole_pi_keys` for `pi` (nelson-nuc's key, `files/nelson-nuc_id_rsa.pub`), turns off SSH password and root login (`/etc/ssh/sshd_config.d/10-harden.conf`), stops and disables VNC, CUPS, Bluetooth, ModemManager, triggerhappy and avahi (masks `colord`), locks `pihole_locked_users` (`riker`: password locked and account expired; `usermod -U -e '' riker` undoes it), and removes the GitHub CLI and its apt repo. `-e pihole_harden_reboot=true` reboots at the end, which means about a minute without LAN DNS.
+
+With passwords off, `ssh-copy-id` from a new host can't log in. Add the key from a host that already has one (`ssh-copy-id -f -i newhost.pub pi@pihole.lan`), or add it to `pihole_pi_keys` and rerun.
 
 ### pihole-backup.yml
 

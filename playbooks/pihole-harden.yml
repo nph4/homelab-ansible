@@ -1,0 +1,107 @@
+# Hardening for the Pi-hole Pi (Raspberry Pi OS with the desktop image's extras).
+#
+# - SSH: key login only, no root login. Extra keys for `pi` are authorized first, and the config is
+#   checked with `sshd -t` before sshd reloads, so a bad change can't lock anyone out. To add a host
+#   later: `ssh-copy-id -f -i newhost.pub pi@pihole.lan` from a host that already has a key, or add
+#   it to pihole_pi_keys and rerun.
+# - Stops and disables desktop/peripheral services a headless DNS server doesn't need, including
+#   their socket/path activation units.
+# - Locks pihole_locked_users (password locked and account expired, so keys stop working too; the
+#   home directory stays). Undo with `usermod -U -e '' <user>`.
+# - Removes the GitHub CLI and its apt repo.
+# - Reboots if pihole_harden_reboot is true (default false): about a minute without LAN DNS.
+
+- name: Harden the Pi-hole host
+  hosts: pis
+  become: true
+
+  vars:
+    pihole_pi_keys:
+      - "{{ lookup('file', '../files/nelson-nuc_id_rsa.pub') }}"
+    pihole_locked_users: [riker]
+    pihole_disabled_units:
+      - vncserver-x11-serviced.service
+      - cups.service
+      - cups.socket
+      - cups.path
+      - cups-browsed.service
+      - bluetooth.service
+      - hciuart.service
+      - ModemManager.service
+      - triggerhappy.service
+      - triggerhappy.socket
+      - avahi-daemon.service
+      - avahi-daemon.socket
+    # Started on demand over D-Bus rather than enabled, so it has to be masked
+    pihole_masked_units: [colord.service]
+    pihole_harden_reboot: false
+
+  handlers:
+    - name: Reload sshd
+      service:
+        name: ssh
+        state: reloaded
+
+  tasks:
+    - name: Authorize extra keys for pi
+      authorized_key:
+        user: pi
+        key: "{{ item }}"
+      loop: "{{ pihole_pi_keys }}"
+
+    - name: SSH key login only, no root login
+      copy:
+        dest: /etc/ssh/sshd_config.d/10-harden.conf
+        mode: "0644"
+        content: |
+          # Managed by homelab-ansible (playbooks/pihole-harden.yml)
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin no
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload sshd
+
+    - name: Stop and disable unneeded services
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop: "{{ pihole_disabled_units }}"
+      failed_when: false
+
+    - name: Mask on-demand services
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        masked: true
+      loop: "{{ pihole_masked_units }}"
+
+    - name: Lock unused accounts
+      user:
+        name: "{{ item }}"
+        password_lock: true
+        expires: 1
+      loop: "{{ pihole_locked_users }}"
+
+    - name: Remove the GitHub CLI
+      apt:
+        name: gh
+        state: absent
+        purge: true
+
+    - name: Remove the GitHub CLI apt repo and key
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/github-cli.list
+        - /etc/apt/keyrings/githubcli-archive-keyring.gpg
+
+    - name: Apply sshd changes before any reboot
+      meta: flush_handlers
+
+    - name: Reboot
+      reboot:
+        msg: "Reboot initiated by Ansible (pihole-harden.yml)"
+        post_reboot_delay: 30
+      when: pihole_harden_reboot | bool
