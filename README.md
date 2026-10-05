@@ -58,7 +58,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `komodo-periphery.yml` | `komodo_periphery` | Deploys a standalone Komodo Periphery agent. |
 | `nvidia.yml` | `nvidia` | Installs the NVIDIA driver + container toolkit so containers can use the GPU. |
 | `nas-remount-restart.yml` | `nas_remount_restart` | Restarts the host's `nas_restart_containers` whenever `/mnt/nas` mounts. |
-| `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers to the NAS. |
+| `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers (and labeled upload directories) to the NAS. |
 
 ### nas-remount-restart.yml
 
@@ -69,11 +69,13 @@ A container that binds a subdirectory of the NAS share (e.g. `/mnt/nas/media/Boo
 Installs `/usr/local/sbin/db-backup` and `/etc/cron.d/db-backup` (00:30 daily: before 01:00, since DST changeovers skip or repeat 01:00–03:00, and before CrashPlan's 03:00 scan of the share). The script backs up running containers by label, set in the Homelab-IaC compose files:
 
 - `homelab.backup.postgres=true`: `pg_dumpall` as the container's `$POSTGRES_USER`, checked for the end-of-dump marker.
+- `homelab.backup.mysql=true`: `mariadb-dump --all-databases --single-transaction` as root, using the container's `$MARIADB_ROOT_PASSWORD` (official `mariadb` image), checked for the `-- Dump completed` marker.
 - `homelab.backup.sqlite=/path/a.db,/path/b.db`: SQLite's online `.backup` of each path (paths inside the container, which must be on a bind mount or volume), checked with `PRAGMA quick_check`. It runs as the file's owner, so any `-wal`/`-shm` files it creates aren't root-owned.
+- `homelab.backup.files=/path/dir,/path/dir2`: a `tar.gz` of each directory (paths inside the container, on a bind mount or volume), for files an app keeps outside its database, such as uploads. Archive paths start at the directory's own name.
 
 Dumps are gzipped into `/mnt/nas/backups/db/<host>/<YYYY-MM-DD>/`, keeping the newest 14 days (`db_backup_keep`). If `/mnt/nas` isn't mounted, the script exits without writing anything. The log is `/var/log/db-backup.log`, and the exit status is non-zero if any dump failed. Set `db_backup_push_url` to an Uptime Kuma push monitor URL to be alerted on failures or missed runs. Run `sudo db-backup` on a host to test.
 
-Restore: `zcat <c>.sql.gz | docker exec -i <c> psql -U <user> -d postgres` into a fresh (empty-volume) container; for SQLite, stop the app and replace the file with the gunzipped copy, removing any `-wal`/`-shm` next to it.
+Restore: `zcat <c>.sql.gz | docker exec -i <c> psql -U <user> -d postgres` into a fresh (empty-volume) container. For MariaDB, `zcat <c>.sql.gz | docker exec -i <c> sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'`. For SQLite, stop the app and replace the file with the gunzipped copy, removing any `-wal`/`-shm` next to it. For files, stop the app and `tar -xzf` the archive into the directory's parent.
 
 ### docker.yml
 

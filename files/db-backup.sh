@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Managed by homelab-ansible (playbooks/db-backup.yml)
 #
-# Dumps the databases of every running container labeled for backup into
+# Backs up every running container labeled for backup into
 # $DB_BACKUP_DEST/<host>/<YYYY-MM-DD>/ on the NAS, keeping the newest $DB_BACKUP_KEEP days.
 #
 #   homelab.backup.postgres=true                   pg_dumpall as the container's $POSTGRES_USER
+#   homelab.backup.mysql=true                      mariadb-dump of all databases as root ($MARIADB_ROOT_PASSWORD)
 #   homelab.backup.sqlite=/app/data/a.db,/b.db     sqlite3 .backup of each path (paths inside the container)
+#   homelab.backup.files=/config/uploads,/data     tar of each directory (paths inside the container)
 #
-# SQLite paths must be on a bind mount or volume; they're read from the host side. The online
-# .backup API is safe while the app is writing, so nothing is stopped.
+# SQLite and file paths must be on a bind mount or volume; they're read from the host side. The
+# online .backup API is safe while the app is writing, so nothing is stopped.
 set -euo pipefail
 
 nas=/mnt/nas
@@ -21,6 +23,20 @@ failed=0
 count=0
 
 log() { echo "$(date '+%F %T') $*"; }
+
+# Container path -> host path, via the longest mount destination that contains it; empty if none
+host_path() {
+    docker inspect -f '{{json .Mounts}}' "$1" | jq -r --arg p "$2" '
+        [.[] | select(.Destination as $d | $p == $d or ($p | startswith($d + "/")))]
+        | max_by(.Destination | length)
+        | if . == null then "" else .Source + $p[(.Destination | length):] end'
+}
+
+# Comma-separated paths from a label
+label_paths() {
+    local -n out=$3
+    IFS=, read -ra out <<<"$(docker inspect -f "{{index .Config.Labels \"$2\"}}" "$1")"
+}
 
 push() {
     [[ -n $push_url ]] || return 0
@@ -58,15 +74,25 @@ for c in $(docker ps --filter label=homelab.backup.postgres=true --format '{{.Na
     fi
 done
 
+for c in $(docker ps --filter label=homelab.backup.mysql=true --format '{{.Names}}'); do
+    out="$work/$c.sql.gz"
+    # MYSQL_PWD keeps the password off the command line
+    if docker exec "$c" sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" exec mariadb-dump -uroot --all-databases --single-transaction --routines --events' |
+        gzip >"$out" &&
+        zcat "$out" | tail -n 1 | grep -q '^-- Dump completed' &&
+        cp "$out" "$dest/"; then
+        log "ok   $c ($(du -h "$out" | cut -f1))"
+        count=$((count + 1))
+    else
+        log "FAIL $c: mariadb-dump"
+        failed=1
+    fi
+done
+
 for c in $(docker ps --filter label=homelab.backup.sqlite --format '{{.Names}}'); do
-    mounts=$(docker inspect -f '{{json .Mounts}}' "$c")
-    IFS=, read -ra paths <<<"$(docker inspect -f '{{index .Config.Labels "homelab.backup.sqlite"}}' "$c")"
+    label_paths "$c" homelab.backup.sqlite paths
     for p in "${paths[@]}"; do
-        # Container path -> host path, via the longest mount destination that contains it
-        src=$(jq -r --arg p "$p" '
-            [.[] | select(.Destination as $d | $p == $d or ($p | startswith($d + "/")))]
-            | max_by(.Destination | length)
-            | if . == null then "" else .Source + $p[(.Destination | length):] end' <<<"$mounts")
+        src=$(host_path "$c" "$p")
         if [[ -z $src || ! -f $src ]]; then
             log "FAIL $c: $p is not a file on a mount"
             failed=1
@@ -85,6 +111,27 @@ for c in $(docker ps --filter label=homelab.backup.sqlite --format '{{.Names}}')
             [[ $(sqlite3 "$tmp" 'PRAGMA quick_check') == ok ]] &&
             gzip "$tmp" && cp "$tmp.gz" "$dest/"; then
             log "ok   $c $p ($(du -h "$tmp.gz" | cut -f1))"
+            count=$((count + 1))
+        else
+            log "FAIL $c: $p"
+            failed=1
+        fi
+    done
+done
+
+for c in $(docker ps --filter label=homelab.backup.files --format '{{.Names}}'); do
+    label_paths "$c" homelab.backup.files paths
+    for p in "${paths[@]}"; do
+        src=$(host_path "$c" "$p")
+        if [[ -z $src || ! -d $src ]]; then
+            log "FAIL $c: $p is not a directory on a mount"
+            failed=1
+            continue
+        fi
+        out="$work/$c.$(basename "$p").tar.gz"
+        # Archive paths are relative to the directory's parent, e.g. uploads/images/...
+        if tar -czf "$out" -C "$(dirname "$src")" "$(basename "$src")" && cp "$out" "$dest/"; then
+            log "ok   $c $p ($(du -h "$out" | cut -f1))"
             count=$((count + 1))
         else
             log "FAIL $c: $p"
