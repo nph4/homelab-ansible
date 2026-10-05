@@ -3,7 +3,6 @@ ansible_user='ansible'
 ansible_python_interpreter='/usr/bin/python3'
 [pis]
 pihole.lan
-ansible.lan
 [ubuntu]
 # The control container reaches its own host from its Docker network, not the LAN IP (bootstrap.yml key restriction)
 nelson-nuc.lan automation_key_from='192.168.88.101,172.16.0.0/12'
