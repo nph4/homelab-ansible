@@ -39,7 +39,7 @@
           # Managed by homelab-ansible (playbooks/pihole-backup.yml)
           PIHOLE_BACKUP_DEST={{ pihole_backup_dest }}
           PIHOLE_BACKUP_KEEP={{ pihole_backup_keep }}
-          PIHOLE_BACKUP_PUSH_URL={{ pihole_backup_push_url }}
+          PIHOLE_BACKUP_PUSH_URL="{{ pihole_backup_push_url }}"
           {{ pihole_backup_minute }} {{ pihole_backup_hour }} * * * root /usr/local/sbin/pihole-backup >>/var/log/pihole-backup.log 2>&1
 
     - name: Rotate its log

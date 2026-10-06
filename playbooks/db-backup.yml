@@ -39,7 +39,7 @@
           # Managed by homelab-ansible (playbooks/db-backup.yml)
           DB_BACKUP_DEST={{ db_backup_dest }}
           DB_BACKUP_KEEP={{ db_backup_keep }}
-          DB_BACKUP_PUSH_URL={{ db_backup_push_url }}
+          DB_BACKUP_PUSH_URL="{{ db_backup_push_url }}"
           {{ db_backup_minute }} {{ db_backup_hour }} * * * root /usr/local/sbin/db-backup >>/var/log/db-backup.log 2>&1
 
     - name: Rotate its log
