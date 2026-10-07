@@ -60,7 +60,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `nas-remount-restart.yml` | `nas_remount_restart` | Restarts the host's `nas_restart_containers` whenever `/mnt/nas` mounts. |
 | `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers (and labeled upload directories) to the NAS. |
 | `pihole-backup.yml` | `pis` | Nightly Pi-hole Teleporter export to the NAS. |
-| `pihole-harden.yml` | `pis` | SSH key-only login, disables unneeded desktop services, locks unused accounts. |
+| `pihole-harden.yml` | `pis` | SSH key-only login, disables unneeded desktop services, locks unused accounts, daily security updates. |
 | `pihole-stage.yml` | `pis` | Before reflashing the Pi-hole Pi: copies its Tailscale state and NAS credentials to the control node. |
 | `pihole-install.yml` | `pis` | Sets up a freshly flashed Pi-hole Pi: NAS mount, Tailscale (old identity), Pi-hole from the latest Teleporter export. |
 
@@ -92,7 +92,7 @@ The new card is flashed with Raspberry Pi OS Lite and given hand-written cloud-i
 
 ### pihole-harden.yml
 
-For the Pi-hole Pi, which runs a Raspberry Pi OS desktop image. It authorizes `pihole_pi_keys` for `pi` (nelson-nuc's key, `files/nelson-nuc_id_rsa.pub`), turns off SSH password and root login (`/etc/ssh/sshd_config.d/10-harden.conf`), stops and disables VNC, CUPS, Bluetooth, ModemManager, triggerhappy and avahi (masks `colord`), locks `pihole_locked_users` (`riker`: password locked and account expired; `usermod -U -e '' riker` undoes it), and removes the GitHub CLI and its apt repo. `-e pihole_harden_reboot=true` reboots at the end, which means about a minute without LAN DNS.
+For the Pi-hole Pi, which runs a Raspberry Pi OS desktop image. It authorizes `pihole_pi_keys` for `pi` (nelson-nuc's key, `files/nelson-nuc_id_rsa.pub`), turns off SSH password and root login (`/etc/ssh/sshd_config.d/10-harden.conf`), stops and disables VNC, CUPS, Bluetooth, ModemManager, triggerhappy and avahi (masks `colord`), locks `pihole_locked_users` (`riker`: password locked and account expired; `usermod -U -e '' riker` undoes it), removes the GitHub CLI and its apt repo, and turns on `unattended-upgrades` for Debian security updates (daily, no automatic reboot; full upgrades and kernel reboots stay with `updates.yml`). `-e pihole_harden_reboot=true` reboots at the end, which means about a minute without LAN DNS.
 
 With passwords off, `ssh-copy-id` from a new host can't log in. Add the key from a host that already has one (`ssh-copy-id -f -i newhost.pub pi@pihole.lan`), or add it to `pihole_pi_keys` and rerun.
 

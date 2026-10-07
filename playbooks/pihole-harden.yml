@@ -10,6 +10,7 @@
 # - Locks pihole_locked_users (password locked and account expired, so keys stop working too; the
 #   home directory stays). Undo with `usermod -U -e '' <user>`.
 # - Removes the GitHub CLI and its apt repo.
+# - Turns on unattended-upgrades for Debian security updates (daily, never reboots).
 # - Reboots if pihole_harden_reboot is true (default false): about a minute without LAN DNS.
 
 - name: Harden the Pi-hole host
@@ -115,6 +116,31 @@
       loop:
         - /etc/apt/sources.list.d/github-cli.list
         - /etc/apt/keyrings/githubcli-archive-keyring.gpg
+
+    # Security updates daily from Debian's security archive (the package's default origins), with no
+    # automatic reboot. Raspberry Pi's archive (kernel, firmware) isn't in those origins: updates.yml
+    # handles full upgrades and reboots. Pi-hole itself isn't an apt package (pihole-update.yml).
+    - name: Install unattended-upgrades
+      apt:
+        name: unattended-upgrades
+        update_cache: true
+
+    - name: Turn on daily security updates
+      copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+        content: |
+          // Managed by homelab-ansible (playbooks/pihole-harden.yml)
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+
+    - name: Never reboot automatically
+      copy:
+        dest: /etc/apt/apt.conf.d/52unattended-upgrades-homelab
+        mode: "0644"
+        content: |
+          // Managed by homelab-ansible (playbooks/pihole-harden.yml)
+          Unattended-Upgrade::Automatic-Reboot "false";
 
     - name: Apply sshd changes before any reboot
       meta: flush_handlers
