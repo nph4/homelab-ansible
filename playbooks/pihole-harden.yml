@@ -96,7 +96,7 @@
         name: "{{ item }}"
         password_lock: true
         expires: 1
-      loop: "{{ pihole_locked_users | select('in', getent_passwd.keys()) | list }}"
+      loop: "{{ pihole_locked_users | select('in', ansible_facts.getent_passwd.keys()) | list }}"
 
     - name: Remove the GitHub CLI
       apt:
