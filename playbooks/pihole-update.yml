@@ -1,6 +1,36 @@
+# Update Pi-hole now, and schedule the weekly update (Mondays 03:00, after the 01:00-03:00 DST window),
+# logging to /var/log/pihole-update.log. The schedule used to live only on the old card's
+# /etc/cron.d/pihole-update; it's managed here since the Trixie reflash.
 - name: Update pihole
   hosts: "pis"
   become: true
+
+  vars:
+    pihole_update_minute: "0"
+    pihole_update_hour: "3"
+    pihole_update_weekday: "1"
+
   tasks:
     - name: pihole updates
       shell: pihole -up
+
+    - name: Schedule the weekly update
+      copy:
+        dest: /etc/cron.d/pihole-update
+        mode: "0644"
+        content: |
+          # Managed by homelab-ansible (playbooks/pihole-update.yml)
+          {{ pihole_update_minute }} {{ pihole_update_hour }} * * {{ pihole_update_weekday }} root /usr/local/bin/pihole -up >>/var/log/pihole-update.log 2>&1
+
+    - name: Rotate its log
+      copy:
+        dest: /etc/logrotate.d/pihole-update
+        mode: "0644"
+        content: |
+          /var/log/pihole-update.log {
+              monthly
+              rotate 6
+              compress
+              missingok
+              notifempty
+          }

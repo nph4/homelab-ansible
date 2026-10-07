@@ -1,0 +1,209 @@
+# Set up a freshly flashed Pi-hole Pi (Raspberry Pi OS Lite 64-bit, Trixie) after its first boot.
+#
+# Prerequisites:
+#   - The card's cloud-init user-data/network-config (written by hand, not in Git; they hold the old
+#     Pi's SSH host private keys) gave it 192.168.88.34, the `pi` and `ansible` users and the old host
+#     keys, so this connects like before.
+#   - pihole-stage.yml ran against the OLD card first, so {{ pihole_stage_dir }} on the control node has
+#     tailscaled.state and cifs-credentials.
+#   - The old card is out of the Pi: it uses the same Tailscale identity, which must never run twice.
+#
+# Then run, in order: pihole-install.yml, pihole-update.yml, pihole-backup.yml, timezone.yml,
+# updates.yml, and pihole-harden.yml once the Pi is confirmed reachable.
+#
+# What it does:
+#   1. Deletes user-data from the boot partition (it holds the host private keys).
+#   2. Mounts the NAS at /mnt/nas (same automount options as the other hosts).
+#   3. Installs Tailscale and restores the old node's state: same node, same 100.x IP, no re-auth.
+#      DNS and route acceptance are turned off: this machine IS the DNS server, and it's a LAN host.
+#   4. Installs Pi-hole unattended, seeded with pihole.toml from the newest Teleporter export, then
+#      imports that export (lists, groups, clients, local DNS, settings including the web and app
+#      passwords) and rebuilds gravity.
+
+- name: Install Pi-hole on a fresh Raspberry Pi OS card
+  hosts: pis
+  become: true
+
+  vars:
+    pihole_stage_dir: /etc/ansible/secrets/pihole
+    pihole_teleporter_dir: /mnt/nas/backups/pihole
+    nas_share: //192.168.88.68/dataset
+    nas_owner: pi
+
+  tasks:
+    # --- 1. cloud-init leftovers --------------------------------------------------------------------
+    - name: Remove user-data from the boot partition (holds the SSH host private keys)
+      file:
+        path: /boot/firmware/user-data
+        state: absent
+
+    - name: Check the host keys are the old Pi's (cloud-init restored them)
+      command: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+      register: hostkey
+      changed_when: false
+      failed_when: "'SHA256:6Bst67/rMYfOg8OWnOwXHxL+CArHGmCqcna47A1XbRE' not in hostkey.stdout"
+
+    # --- 2. NAS -------------------------------------------------------------------------------------
+    - name: Install cifs-utils, unzip and dig
+      apt:
+        name: [cifs-utils, unzip, dnsutils]
+        update_cache: true
+
+    - name: Install the NAS credentials
+      copy:
+        src: "{{ pihole_stage_dir }}/cifs-credentials"
+        dest: /etc/cifs-credentials
+        mode: "0600"
+
+    - name: Add /mnt/nas to fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: '\s/mnt/nas\s'
+        line: "{{ nas_share }} /mnt/nas cifs uid={{ nas_owner }},credentials=/etc/cifs-credentials,_netdev,nofail,x-systemd.automount,x-systemd.mount-timeout=30 0 0"
+
+    - name: Create the mount point
+      file:
+        path: /mnt/nas
+        state: directory
+        mode: "0755"
+
+    - name: Arm the automount
+      systemd:
+        name: mnt-nas.automount
+        state: started
+        daemon_reload: true
+
+    - name: Mount the share now (first access) and check the Teleporter exports are there
+      find:
+        paths: "{{ pihole_teleporter_dir }}"
+        patterns: "pi-hole_*_teleporter_*.zip"
+      register: teleporter_zips
+      failed_when: teleporter_zips.matched == 0
+
+    # --- 3. Tailscale -------------------------------------------------------------------------------
+    - name: Add Tailscale's apt key
+      get_url:
+        url: https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg
+        dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+        mode: "0644"
+
+    - name: Add Tailscale's apt repo
+      copy:
+        dest: /etc/apt/sources.list.d/tailscale.list
+        mode: "0644"
+        content: |
+          deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main
+
+    - name: Check whether the old node's state is already in place
+      stat:
+        path: /var/lib/tailscale/.restored-from-old-card
+      register: ts_restored
+
+    - name: Restore the old node's Tailscale state
+      when: not ts_restored.stat.exists
+      block:
+        - name: Install tailscale
+          apt:
+            name: tailscale
+            update_cache: true
+
+        # The package starts tailscaled with a fresh identity; swap in the old one while it's stopped
+        - name: Stop tailscaled
+          systemd:
+            name: tailscaled
+            state: stopped
+
+        - name: Install the old tailscaled.state
+          copy:
+            src: "{{ pihole_stage_dir }}/tailscaled.state"
+            dest: /var/lib/tailscale/tailscaled.state
+            mode: "0600"
+
+        - name: Mark the state as restored
+          copy:
+            dest: /var/lib/tailscale/.restored-from-old-card
+            content: "{{ ansible_date_time.iso8601 }}\n"
+            mode: "0600"
+
+    - name: Start tailscaled
+      systemd:
+        name: tailscaled
+        state: started
+        enabled: true
+
+    - name: No Tailscale DNS (this is the DNS server) and no subnet routes (it's a LAN host)
+      command: tailscale set --accept-dns=false --accept-routes=false
+      changed_when: false
+
+    - name: Wait for Tailscale to come up as the old node
+      command: tailscale ip -4
+      register: ts_ip
+      retries: 12
+      delay: 5
+      until: ts_ip.rc == 0 and ts_ip.stdout == '100.78.225.61'
+      changed_when: false
+
+    # --- 4. Pi-hole ---------------------------------------------------------------------------------
+    - name: Pick the newest Teleporter export
+      set_fact:
+        teleporter_zip: "{{ (teleporter_zips.files | sort(attribute='path') | last).path }}"
+
+    - name: Check whether Pi-hole is installed
+      stat:
+        path: /usr/local/bin/pihole
+      register: pihole_bin
+
+    - name: Install Pi-hole
+      when: not pihole_bin.stat.exists
+      block:
+        - name: Create /etc/pihole
+          file:
+            path: /etc/pihole
+            state: directory
+            mode: "0755"
+
+        # With pihole.toml present, the installer treats this as an update: no dialogs, config kept
+        - name: Seed pihole.toml from the Teleporter export
+          command: unzip -p "{{ teleporter_zip }}" etc/pihole/pihole.toml
+          register: seed_toml
+          changed_when: false
+
+        - name: Write the seeded pihole.toml
+          copy:
+            dest: /etc/pihole/pihole.toml
+            content: "{{ seed_toml.stdout }}\n"
+            mode: "0640"
+
+        - name: Download the Pi-hole installer
+          get_url:
+            url: https://install.pi-hole.net
+            dest: /root/basic-install.sh
+            mode: "0700"
+
+        - name: Run the installer unattended
+          command: bash /root/basic-install.sh --unattended
+          register: pihole_installer
+
+        - name: Remove the installer
+          file:
+            path: /root/basic-install.sh
+            state: absent
+
+    - name: Import the Teleporter export (lists, groups, clients, local DNS, settings)
+      command: pihole-FTL --teleporter "{{ teleporter_zip }}"
+      when: not pihole_bin.stat.exists
+
+    - name: Restart FTL and rebuild gravity
+      shell: systemctl restart pihole-FTL && pihole -g
+      when: not pihole_bin.stat.exists
+
+    - name: Check Pi-hole answers a local record, an internet name and a blocked one
+      command: "dig +short +time=3 {{ item.name }} @127.0.0.1"
+      register: dig
+      changed_when: false
+      failed_when: item.expect not in dig.stdout
+      loop:
+        - { name: nelson-nuc.lan, expect: "192.168.88.101" }
+        - { name: docs.local.nelsonhickman.com, expect: "192.168.88.101" }
+        - { name: doubleclick.net, expect: "0.0.0.0" }
+        - { name: github.com, expect: "." }

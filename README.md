@@ -36,7 +36,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 
 | Group | Hosts | Purpose |
 |---|---|---|
-| `pis` | Pi-hole boxes | `pihole-update.yml`, `pihole-backup.yml`, `pihole-harden.yml`, `updates.yml` |
+| `pis` | Pi-hole boxes | `pihole-update.yml`, `pihole-backup.yml`, `pihole-harden.yml`, `pihole-stage.yml`, `pihole-install.yml`, `updates.yml` |
 | `ubuntu` | nelson-nuc, quark-vm, kirks-bar | `updates.yml` (also reboots on an NVIDIA driver mismatch) |
 | `komodo_periphery` | docker hosts running a standalone Periphery (kirks-bar) | `komodo-periphery.yml` |
 | `docker` | children: `komodo_periphery`, `nvidia` | `docker.yml` |
@@ -52,7 +52,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 |---|---|---|
 | `bootstrap.yml` | `-l <host>` | One-time creation of the `ansible` user (see Authentication). |
 | `updates.yml` | `ubuntu`, `pis` | apt dist-upgrade, reboot if required. |
-| `pihole-update.yml` | `pis` | Updates Pi-hole. |
+| `pihole-update.yml` | `pis` | Updates Pi-hole now and schedules it weekly (Mondays 03:00). |
 | `timezone.yml` | all hosts | Sets the timezone and configures timesyncd. |
 | `docker.yml` | `docker` | Installs Docker + compose v2 and adds `docker_user` to the docker group. |
 | `komodo-periphery.yml` | `komodo_periphery` | Deploys a standalone Komodo Periphery agent. |
@@ -61,6 +61,8 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers (and labeled upload directories) to the NAS. |
 | `pihole-backup.yml` | `pis` | Nightly Pi-hole Teleporter export to the NAS. |
 | `pihole-harden.yml` | `pis` | SSH key-only login, disables unneeded desktop services, locks unused accounts. |
+| `pihole-stage.yml` | `pis` | Before reflashing the Pi-hole Pi: copies its Tailscale state and NAS credentials to the control node. |
+| `pihole-install.yml` | `pis` | Sets up a freshly flashed Pi-hole Pi: NAS mount, Tailscale (old identity), Pi-hole from the latest Teleporter export. |
 
 ### nas-remount-restart.yml
 
@@ -78,6 +80,15 @@ Installs `/usr/local/sbin/db-backup` and `/etc/cron.d/db-backup` (00:30 daily: b
 Dumps are gzipped into `/mnt/nas/backups/db/<host>/<YYYY-MM-DD>/`, keeping the newest 14 days (`db_backup_keep`). If `/mnt/nas` isn't mounted, the script exits without writing anything. The log is `/var/log/db-backup.log`, and the exit status is non-zero if any dump failed. Set `db_backup_push_url` to an Uptime Kuma push monitor URL to be alerted on failures or missed runs. Run `sudo db-backup` on a host to test.
 
 Restore: `zcat <c>.sql.gz | docker exec -i <c> psql -U <user> -d postgres` into a fresh (empty-volume) container. For MariaDB, `zcat <c>.sql.gz | docker exec -i <c> sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'`. For SQLite, stop the app and replace the file with the gunzipped copy, removing any `-wal`/`-shm` next to it. For files, stop the app and `tar -xzf` the archive into the directory's parent.
+
+### Rebuilding the Pi-hole Pi (pihole-stage.yml, pihole-install.yml)
+
+The new card is flashed with Raspberry Pi OS Lite and given hand-written cloud-init files on its boot partition (not in Git): `network-config` with the static `192.168.88.34`, and `user-data` with the `pi` and `ansible` users and the old Pi's SSH host keys, so nothing sees a changed host key. Then:
+
+1. With the **old** card still running: `ansible-playbook playbooks/pihole-stage.yml`. It copies `tailscaled.state` and `/etc/cifs-credentials` to `/etc/ansible/secrets/pihole/` on the control node (mode 600; host path `/home/nelson/containers/ansible/data/secrets/pihole/`) and takes a fresh Teleporter export.
+2. Power off, swap the card, boot. The secondary Pi-hole on quark-vm answers DNS meanwhile.
+3. `ansible-playbook playbooks/pihole-install.yml`. It deletes `user-data` from the boot partition, checks the host key is the old one, mounts the NAS, installs Tailscale with the old node's state (same node and IP; never boot both cards at once), installs Pi-hole unattended (seeding `pihole.toml` from the newest Teleporter export makes the installer treat it as an update, so no dialogs), imports the export, rebuilds gravity, and checks that Pi-hole answers.
+4. `pihole-update.yml`, `pihole-backup.yml`, `timezone.yml`, `updates.yml`, then `pihole-harden.yml` once the Pi is confirmed reachable (it makes SSH key-only and removes cloud-init's `50-cloud-init.conf` drop-in).
 
 ### pihole-harden.yml
 

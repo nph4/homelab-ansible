@@ -1,0 +1,51 @@
+# Before reflashing the Pi-hole Pi: copy the state a new card needs and the backups don't cover to the
+# control node, outside Git. Run it against the old card, right before swapping (the Tailscale state
+# changes over time, so a copy taken days earlier may be stale):
+#
+#   ansible-playbook playbooks/pihole-stage.yml
+#
+# Copies, into {{ pihole_stage_dir }} on the control node (mode 0600, host path
+# /home/nelson/containers/ansible/data/secrets/pihole/ on nelson-nuc):
+#   - tailscaled.state: the Tailscale node identity, so the new card keeps the same node and 100.x IP
+#   - cifs-credentials: the NAS share's credentials for /mnt/nas
+# The SSH host keys go onto the new card through cloud-init user-data instead, and the Pi-hole config
+# comes from the nightly Teleporter export on the NAS. pihole-install.yml reads these files.
+
+- name: Stage Pi-hole migration secrets on the control node
+  hosts: pis
+  become: true
+
+  vars:
+    pihole_stage_dir: /etc/ansible/secrets/pihole
+
+  tasks:
+    - name: Create the staging directory
+      file:
+        path: "{{ pihole_stage_dir }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+
+    - name: Fetch the Tailscale state and NAS credentials
+      fetch:
+        src: "{{ item.src }}"
+        dest: "{{ pihole_stage_dir }}/{{ item.dest }}"
+        flat: true
+      loop:
+        - { src: /var/lib/tailscale/tailscaled.state, dest: tailscaled.state }
+        - { src: /etc/cifs-credentials, dest: cifs-credentials }
+
+    - name: Restrict the staged files
+      file:
+        path: "{{ pihole_stage_dir }}/{{ item }}"
+        mode: "0600"
+      loop: [tailscaled.state, cifs-credentials]
+      delegate_to: localhost
+      become: false
+
+    - name: Take a fresh Teleporter export too
+      command: /usr/local/sbin/pihole-backup
+      environment:
+        PIHOLE_BACKUP_DEST: /mnt/nas/backups/pihole
+      changed_when: true
