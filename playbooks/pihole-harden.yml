@@ -78,12 +78,16 @@
       loop: "{{ pihole_disabled_units }}"
       failed_when: false
 
+    - name: List installed services
+      service_facts:
+
+    # Only installed ones: Lite has no colord, and systemd can't stop a unit that doesn't exist
     - name: Mask on-demand services
       systemd:
         name: "{{ item }}"
         state: stopped
         masked: true
-      loop: "{{ pihole_masked_units }}"
+      loop: "{{ pihole_masked_units | select('in', ansible_facts.services.keys()) | list }}"
 
     - name: Find which of the accounts to lock exist
       getent:
