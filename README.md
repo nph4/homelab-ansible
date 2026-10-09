@@ -135,6 +135,11 @@ Installs the headless NVIDIA driver (`nvidia_driver_branch`, default `580-server
 
 Kernel and NVIDIA packages are excluded from unattended-upgrades (`/etc/apt/apt.conf.d/51unattended-upgrades-nvidia`), so they only move when `updates.yml` runs. A driver upgrade breaks NVML until reboot (`Driver/library version mismatch`), and a new kernel installed without its nvidia module boots with no driver. `updates.yml` reboots on a driver mismatch as well as on `reboot-required`. The driver isn't `apt-mark hold`: each kernel's module package requires the matching driver version, so a hold would block kernel updates.
 
+## To do
+
+- **MikroTik router updates** (`router-update.yml`): update the RouterOS packages, then the RouterBOOT firmware (`/system routerboard upgrade`), rebooting after each. Run it by hand like `updates.yml`, not on a schedule, since a reboot drops the whole LAN for about a minute. This one targets the router itself, so add it to the inventory: `Ansible@router.lan` (RouterOS user names are case-sensitive) via the `community.routeros` collection over SSH (`ansible_connection=ansible.netcommon.network_cli`), so the router's `api`/`api-ssl` services can stay off. Back up first by running `router-backup` on nelson-nuc.
+- **Later: router config as code**, managing firewall, services, DHCP reservations and DNS settings from a playbook. Do this only after the hardening listed in BookStack (*MikroTik router (host)*), and with a rollback plan, since a bad push can lock you out of the router.
+
 ## Layout
 
 - `inventory/hosts` — the inventory.
