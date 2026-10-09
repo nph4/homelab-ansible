@@ -1,0 +1,60 @@
+# Nightly MikroTik router backup to the NAS.
+#
+# Installs /usr/local/sbin/router-backup and a root cron entry on the host that runs it (nelson-nuc).
+# The router can't write to the NAS itself, so the script SSHes to it as its `Ansible` user with the
+# control container's key (bind-mounted from the host, root-only), saves a `/export show-sensitive`
+# and a binary `/system backup` to {{ router_backup_dest }}, keeps the newest {{ router_backup_keep }}
+# of each, and deletes the binary backup from the router's small flash. The default 00:50 run is before
+# 01:00 (01:00-03:00 is avoided: DST changeovers skip or repeat those times) and before CrashPlan's 03:00
+# scan of the share. Needs /mnt/nas mounted on the host. Installing it runs nothing; run
+# `sudo router-backup` to test.
+
+- name: Nightly router backups to the NAS
+  hosts: router_backup
+  become: true
+
+  vars:
+    router_backup_dest: /mnt/nas/backups/router
+    router_backup_keep: 30
+    router_backup_minute: "50"
+    router_backup_hour: "0"
+    # RouterOS user names are case-sensitive
+    router_backup_target: Ansible@router.lan
+    router_backup_key: /home/nelson/containers/ansible/ssh/id_ed25519
+    router_backup_known_hosts: /home/nelson/containers/ansible/ssh/known_hosts
+    # Optional Uptime Kuma push monitor URL (without query string); empty disables it
+    router_backup_push_url: ""
+
+  tasks:
+    - name: Install the backup script
+      copy:
+        src: ../files/router-backup.sh
+        dest: /usr/local/sbin/router-backup
+        mode: "0755"
+
+    - name: Schedule it
+      copy:
+        dest: /etc/cron.d/router-backup
+        mode: "0644"
+        content: |
+          # Managed by homelab-ansible (playbooks/router-backup.yml)
+          ROUTER_BACKUP_DEST="{{ router_backup_dest }}"
+          ROUTER_BACKUP_KEEP="{{ router_backup_keep }}"
+          ROUTER_BACKUP_TARGET="{{ router_backup_target }}"
+          ROUTER_BACKUP_KEY="{{ router_backup_key }}"
+          ROUTER_BACKUP_KNOWN_HOSTS="{{ router_backup_known_hosts }}"
+          ROUTER_BACKUP_PUSH_URL="{{ router_backup_push_url }}"
+          {{ router_backup_minute }} {{ router_backup_hour }} * * * root /usr/local/sbin/router-backup >>/var/log/router-backup.log 2>&1
+
+    - name: Rotate its log
+      copy:
+        dest: /etc/logrotate.d/router-backup
+        mode: "0644"
+        content: |
+          /var/log/router-backup.log {
+              monthly
+              rotate 6
+              compress
+              missingok
+              notifempty
+          }

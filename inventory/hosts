@@ -34,3 +34,7 @@ kirks-bar.lan nas_restart_containers='["Jellyfin"]'
 nelson-nuc.lan
 quark-vm.lan
 kirks-bar.lan
+# Host whose cron backs up the MikroTik router over SSH (playbooks/router-backup.yml).
+# The router itself isn't an inventory host.
+[router_backup]
+nelson-nuc.lan

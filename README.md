@@ -43,6 +43,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `nvidia` | docker hosts with an NVIDIA GPU (kirks-bar) | `nvidia.yml` |
 | `nas_remount_restart` | hosts with containers binding `/mnt/nas` subdirectories (nelson-nuc, quark-vm, kirks-bar) | `nas-remount-restart.yml` |
 | `db_backup` | docker hosts with database containers to back up (nelson-nuc, quark-vm, kirks-bar) | `db-backup.yml` |
+| `router_backup` | the host that backs up the MikroTik router over SSH (nelson-nuc) | `router-backup.yml` |
 
 `quark-vm.lan` is a CNAME for `quarks.lan`, so it's listed only once.
 
@@ -60,6 +61,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `nas-remount-restart.yml` | `nas_remount_restart` | Restarts the host's `nas_restart_containers` whenever `/mnt/nas` mounts. |
 | `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers (and labeled upload directories) to the NAS. |
 | `pihole-backup.yml` | `pis` | Nightly Pi-hole Teleporter export to the NAS. |
+| `router-backup.yml` | `router_backup` | Nightly MikroTik router export + binary backup to the NAS. |
 | `pihole-harden.yml` | `pis` | SSH key-only login, disables unneeded desktop services, locks unused accounts, daily security updates. |
 | `pihole-stage.yml` | `pis` | Before reflashing the Pi-hole Pi: copies its Tailscale state and NAS credentials to the control node. |
 | `pihole-install.yml` | `pis` | Sets up a freshly flashed Pi-hole Pi: NAS mount, Tailscale (old identity), Pi-hole from the latest Teleporter export. |
@@ -101,6 +103,15 @@ With passwords off, `ssh-copy-id` from a new host can't log in. Add the key from
 Installs `/usr/local/sbin/pihole-backup` and `/etc/cron.d/pihole-backup` (00:45 daily, for the same reasons as `db-backup`). The script runs `pihole-FTL --teleporter` in a temp directory, checks the zip (integrity, and that it contains `pihole.toml`), and copies it to `/mnt/nas/backups/pihole/` (`pihole_backup_dest`), keeping the newest 30 (`pihole_backup_keep`). A Teleporter export holds `pihole.toml` (all settings, local DNS and CNAME records), `gravity.db` (adlists, allow/deny lists, groups, clients) and `/etc/hosts`; it doesn't include the query history. Needs `/mnt/nas` mounted on the Pi; if it isn't, the script exits without writing anything. Log, exit status and `pihole_backup_push_url` work like `db-backup`. Run `sudo pihole-backup` to test.
 
 Restore: Pi-hole web UI > Settings > Teleporter > Import, or `sudo pihole-FTL --teleporter <zip>` on the Pi.
+
+### router-backup.yml
+
+The router (MikroTik hEX, `router.lan`) isn't in the inventory and can't write to the NAS, so this installs `/usr/local/sbin/router-backup` and `/etc/cron.d/router-backup` (00:50 daily, for the same reasons as `db-backup`) on nelson-nuc. The script SSHes to the router as **`Ansible`** (RouterOS user names are case-sensitive; group `full`, allowed only from `192.168.88.101`) with the control container's key, read from its host bind mount (`/home/nelson/containers/ansible/ssh/`, root-only, along with the `known_hosts` that pins the router's host key). Each run writes two files to `/mnt/nas/backups/router/` (`router_backup_dest`), keeping the newest 30 of each (`router_backup_keep`):
+
+- `router_<date>.rsc`: `/export show-sensitive`, checked for its header and an `/ip address` section. Plain text, so it diffs well and restores onto any RouterOS device (paste it, or `/import`). It has no user passwords.
+- `router_<date>.backup`: `/system backup save dont-encrypt=yes`, checked for the unencrypted-backup header. A full backup, users and passwords included, but only restorable onto this router model (*Files* > upload, then `/system backup load`). It's unencrypted, like the database dumps next to it.
+
+The binary backup is saved on the router's flash first (16 MiB, about 3.6 MiB free) and deleted there after it's copied, also when a run fails. Needs `/mnt/nas` mounted on nelson-nuc; if it isn't, the script exits without writing anything. Log (`/var/log/router-backup.log`), exit status and `router_backup_push_url` work like `db-backup`. Run `sudo router-backup` to test.
 
 ### docker.yml
 
