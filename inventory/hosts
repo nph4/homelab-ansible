@@ -38,3 +38,9 @@ kirks-bar.lan
 # The router itself isn't an inventory host.
 [router_backup]
 nelson-nuc.lan
+# Hosts whose host-only secret files are backed up, age-encrypted, to the NAS nightly
+# (playbooks/secrets-backup.yml). Values are absolute paths or globs; a missing one fails the run.
+# kirks-bar has nothing host-only beyond /etc/cifs-credentials, which is the same on every host.
+[secrets_backup]
+nelson-nuc.lan secrets_backup_paths='["/home/nelson/containers/auth/secrets", "/home/nelson/containers/*/.env", "/home/nelson/containers/traefik/cf_api_token.txt", "/home/nelson/containers/traefik/dashboard_htpasswd.txt", "/home/nelson/containers/nextcloud/nextcloud_db_password.txt", "/home/nelson/containers/komodo/compose.env", "/home/nelson/containers/ansible/ssh", "/home/nelson/containers/ansible/data/secrets", "/home/nelson/containers/home_assist/secrets.yaml", "/srv/containers/calibre/config/.key", "/etc/cifs-credentials"]'
+quark-vm.lan secrets_backup_paths='["/opt/stacks/paperless-ngx/secrets", "/home/quark/containers/pihole/.env", "/home/quark/containers/pihole/nebula-sync.env", "/home/quark/containers/komodo-periphery/compose.env", "/etc/cifs-credentials"]'
