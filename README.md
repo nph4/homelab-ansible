@@ -44,6 +44,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `nas_remount_restart` | hosts with containers binding `/mnt/nas` subdirectories (nelson-nuc, quark-vm, kirks-bar) | `nas-remount-restart.yml` |
 | `db_backup` | docker hosts with database containers to back up (nelson-nuc, quark-vm, kirks-bar) | `db-backup.yml` |
 | `router_backup` | the host that backs up the MikroTik router over SSH (nelson-nuc) | `router-backup.yml` |
+| `secrets_backup` | hosts with host-only secret files, listed per host in `secrets_backup_paths` (nelson-nuc, quark-vm) | `secrets-backup.yml` |
 
 `quark-vm.lan` is a CNAME for `quarks.lan`, so it's listed only once.
 
@@ -62,6 +63,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `db-backup.yml` | `db_backup` | Nightly dumps of labeled database containers (and labeled upload directories) to the NAS. |
 | `pihole-backup.yml` | `pis` | Nightly Pi-hole Teleporter export to the NAS. |
 | `router-backup.yml` | `router_backup` | Nightly MikroTik router export + binary backup to the NAS. |
+| `secrets-backup.yml` | `secrets_backup` | Nightly age-encrypted tar of each host's `secrets_backup_paths` to the NAS. |
 | `pihole-harden.yml` | `pis` | SSH key-only login, disables unneeded desktop services, locks unused accounts, daily security updates. |
 | `pihole-stage.yml` | `pis` | Before reflashing the Pi-hole Pi: copies its Tailscale state and NAS credentials to the control node. |
 | `pihole-install.yml` | `pis` | Sets up a freshly flashed Pi-hole Pi: NAS mount, Tailscale (old identity), Pi-hole from the latest Teleporter export. |
@@ -82,6 +84,12 @@ Installs `/usr/local/sbin/db-backup` and `/etc/cron.d/db-backup` (00:30 daily: b
 Dumps are gzipped into `/mnt/nas/backups/db/<host>/<YYYY-MM-DD>/`, keeping the newest 14 days (`db_backup_keep`). If `/mnt/nas` isn't mounted, the script exits without writing anything. The log is `/var/log/db-backup.log`, and the exit status is non-zero if any dump failed. Set `db_backup_push_url` to an Uptime Kuma push monitor URL to be alerted on failures or missed runs. Run `sudo db-backup` on a host to test.
 
 Restore: `zcat <c>.sql.gz | docker exec -i <c> psql -U <user> -d postgres` into a fresh (empty-volume) container. For MariaDB, `zcat <c>.sql.gz | docker exec -i <c> sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb -uroot'`. For SQLite, stop the app and replace the file with the gunzipped copy, removing any `-wal`/`-shm` next to it. For files, stop the app and `tar -xzf` the archive into the directory's parent.
+
+### Secrets backups (secrets-backup.yml)
+
+Each night at 00:40, `/usr/local/sbin/secrets-backup` tars the host's `secrets_backup_paths` (inventory; absolute paths or globs, rendered to `/etc/secrets-backup/paths`) and pipes the tar straight into `age`, encrypting it to the public key(s) in `secrets_backup_recipients`. The output is `/mnt/nas/backups/secrets/<host>/secrets_<YYYY-MM-DD>.tar.age`, keeping the newest 30 (`secrets_backup_keep`). No plaintext is written to disk. **The private key is on no homelab host** (it's in the password manager), so the NAS, CrashPlan and the other hosts only ever see ciphertext. A listed path that's missing fails the run (non-zero exit, `down` push) but the rest is still backed up. When a new host-only secret is added, add its path to the inventory and rerun the playbook. The log is `/var/log/secrets-backup.log`. Set `secrets_backup_push_url` for an Uptime Kuma push monitor. Run `sudo secrets-backup` to test.
+
+Restore, on a machine with the private key in `key.txt`: `age -d -i key.txt secrets_<date>.tar.age | tar -tvf -` to list, or `| tar -xf - -C <dir>` to extract (archive paths are relative to `/`). To change keys, add the new public key to `secrets_backup_recipients`, rerun the playbook, and remove the old one once you no longer need the older archives.
 
 ### Rebuilding the Pi-hole Pi (pihole-stage.yml, pihole-install.yml)
 
