@@ -26,8 +26,8 @@
     komodo_dir: "{{ komodo_containers_dir }}/komodo-periphery"
     komodo_root_dir: "{{ komodo_dir }}/root"
     komodo_project: komodo-periphery
-    # Enable when a stack on this host uses an absolute-path env_file/secrets under ~/containers
-    komodo_mount_containers_dir: false
+    # komodo_mount_containers_dir (inventory, default false): set when a stack on this host uses an
+    # absolute-path env_file/secrets under ~/containers. Not defaulted here: play vars override inventory vars.
     komodo_onboarding_key: ""
 
   tasks:

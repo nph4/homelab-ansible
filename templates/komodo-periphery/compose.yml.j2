@@ -23,7 +23,7 @@ services:
       - /proc:/proc
       ## Must be the same path inside and outside the container
       - {{ komodo_root_dir }}:{{ komodo_root_dir }}
-{% if komodo_mount_containers_dir %}
+{% if komodo_mount_containers_dir | default(false) | bool %}
       ## Lets Periphery's compose subprocess resolve absolute-path env_file/secrets
       - {{ komodo_containers_dir }}:{{ komodo_containers_dir }}:ro
 {% endif %}
