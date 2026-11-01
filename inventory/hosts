@@ -11,7 +11,7 @@ kirks-bar.lan
 # Docker hosts running a standalone Komodo Periphery (playbooks/komodo-periphery.yml).
 # Not nelson-nuc: its Periphery is part of the Core compose project.
 [komodo_periphery]
-kirks-bar.lan docker_user='kirk'
+kirks-bar.lan docker_user='kirk' komodo_mount_containers_dir=true
 # Hosts that get Docker Engine + compose v2 from playbooks/docker.yml
 [docker:children]
 komodo_periphery
@@ -28,7 +28,7 @@ kirks-bar.lan
 nelson-nuc.lan nas_restart_containers='["calibre-web"]'
 # crashplan binds /mnt/nas itself with rslave, which covers a late first mount but not a remount
 quark-vm.lan nas_restart_containers='["crashplan-pro"]'
-kirks-bar.lan nas_restart_containers='["Jellyfin"]'
+kirks-bar.lan nas_restart_containers='["Jellyfin", "immich_server"]'
 # Hosts whose labeled database containers are dumped to the NAS nightly (playbooks/db-backup.yml)
 [db_backup]
 nelson-nuc.lan
@@ -40,7 +40,7 @@ kirks-bar.lan
 nelson-nuc.lan
 # Hosts whose host-only secret files are backed up, age-encrypted, to the NAS nightly
 # (playbooks/secrets-backup.yml). Values are absolute paths or globs; a missing one fails the run.
-# kirks-bar has nothing host-only beyond /etc/cifs-credentials, which is the same on every host.
 [secrets_backup]
 nelson-nuc.lan secrets_backup_paths='["/home/nelson/containers/auth/secrets", "/home/nelson/containers/*/.env", "/home/nelson/containers/traefik/cf_api_token.txt", "/home/nelson/containers/traefik/dashboard_htpasswd.txt", "/home/nelson/containers/nextcloud/nextcloud_db_password.txt", "/home/nelson/containers/komodo/compose.env", "/home/nelson/containers/ansible/ssh", "/home/nelson/containers/ansible/data/secrets", "/home/nelson/containers/home_assist/secrets.yaml", "/srv/containers/calibre/config/.key", "/etc/cifs-credentials"]'
 quark-vm.lan secrets_backup_paths='["/opt/stacks/paperless-ngx/secrets", "/home/quark/containers/pihole/.env", "/home/quark/containers/pihole/nebula-sync.env", "/home/quark/containers/komodo-periphery/compose.env", "/etc/cifs-credentials"]'
+kirks-bar.lan secrets_backup_paths='["/home/kirk/containers/immich/.env", "/etc/cifs-credentials"]'
