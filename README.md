@@ -44,7 +44,7 @@ If a server on the LAN is on the tailnet, it needs `tailscale set --accept-route
 | `nas_remount_restart` | hosts with containers binding `/mnt/nas` subdirectories (nelson-nuc, quark-vm, kirks-bar) | `nas-remount-restart.yml` |
 | `db_backup` | docker hosts with database containers to back up (nelson-nuc, quark-vm, kirks-bar) | `db-backup.yml` |
 | `router_backup` | the host that backs up the MikroTik router over SSH (nelson-nuc) | `router-backup.yml` |
-| `secrets_backup` | hosts with host-only secret files, listed per host in `secrets_backup_paths` (nelson-nuc, quark-vm) | `secrets-backup.yml` |
+| `secrets_backup` | hosts with host-only secret files, listed per host in `secrets_backup_paths` (nelson-nuc, quark-vm, kirks-bar) | `secrets-backup.yml` |
 
 `quark-vm.lan` is a CNAME for `quarks.lan`, so it's listed only once.
 
@@ -129,10 +129,11 @@ Fresh hosts get Docker's official apt repo (like nelson-nuc). Hosts that already
 
 ### komodo-periphery.yml
 
-Runs Periphery as `docker_user` (compose project in that user's `~/containers/komodo-periphery`), connecting outbound to Komodo Core on nelson-nuc over Tailscale. Imports `docker.yml` first.
+Runs Periphery as `docker_user` (compose project in that user's `~/containers/komodo-periphery`), connecting outbound to Komodo Core on nelson-nuc at its LAN address (`komodo_core_address`, `192.168.88.101:9120`). Imports `docker.yml` first.
 
 - First run on a host needs a privileged onboarding key created in Core: `-e komodo_onboarding_key=<key>`. Later runs don't; delete the key in Core once onboarding succeeds. Onboarding state is detected from `core.pub` in the `keys` volume.
 - `komodo_version` must match Core.
+- Set `komodo_mount_containers_dir=true` on the host in the inventory (as on kirks-bar) when a stack uses an absolute-path `env_file`/`secrets` under `~/containers`. It mounts that directory read-only into Periphery, whose `docker compose` runs inside its own container and can't otherwise read the file. Don't add it to the play's `vars:`, which would override the inventory.
 - Never target nelson-nuc — its Periphery is part of the Core compose project.
 
 Background lives in the Homelab-IaC repo's `Komodo-PoC.md` / `Komodo-Migration.md`.
